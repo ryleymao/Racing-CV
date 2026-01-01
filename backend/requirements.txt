@@ -1,0 +1,22 @@
+# Web Framework
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+
+# Data Validation & Settings
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+
+# Computer Vision - Industry Standard
+opencv-python>=4.8.0  # cv2 for webcam capture
+mediapipe>=0.10.0      # mediapipe.solutions.face_mesh.FaceMesh
+numpy>=1.24.0
+
+# WebSocket - Industry Standard
+websockets>=12.0       # websockets library for phone input
+
+# Development
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+black>=23.11.0
+mypy>=1.7.0
+ruff>=0.1.6

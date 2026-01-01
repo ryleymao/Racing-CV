@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Phone Steering Input</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: Arial, sans-serif;
+            background: #1a1a1a;
+            color: white;
+            overflow: hidden;
+            touch-action: none;
+        }
+        
+        #container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            padding: 20px;
+        }
+        
+        #status {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            padding: 10px 15px;
+            background: rgba(0,0,0,0.7);
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        
+        .connected {
+            border-left: 4px solid #0f0;
+        }
+        
+        .disconnected {
+            border-left: 4px solid #f00;
+        }
+        
+        h1 {
+            margin-bottom: 30px;
+            text-align: center;
+        }
+        
+        #steeringDisplay {
+            font-size: 48px;
+            margin: 20px 0;
+            color: #0ff;
+        }
+        
+        #joystickArea {
+            width: 300px;
+            height: 300px;
+            background: rgba(255,255,255,0.1);
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            position: relative;
+            margin: 30px 0;
+            touch-action: none;
+        }
+        
+        #joystickKnob {
+            width: 60px;
+            height: 60px;
+            background: #0ff;
+            border-radius: 50%;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 0 20px rgba(0,255,255,0.5);
+            transition: none;
+        }
+        
+        #tiltMode {
+            margin-top: 30px;
+            padding: 15px 30px;
+            background: rgba(255,255,255,0.1);
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 10px;
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        
+        #tiltMode.active {
+            background: rgba(0,255,255,0.2);
+            border-color: #0ff;
+        }
+    </style>
+</head>
+<body>
+    <div id="status" class="disconnected">Disconnected</div>
+    
+    <div id="container">
+        <h1>Phone Steering Control</h1>
+        <div id="steeringDisplay">0.00</div>
+        <div id="joystickArea">
+            <div id="joystickKnob"></div>
+        </div>
+        <button id="tiltMode">Enable Tilt Control</button>
+    </div>
+
+    <script>
+        // WebSocket connection
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const hostname = window.location.hostname || 'localhost';
+        const wsUrl = `${protocol}//${hostname}:8000/ws`;
+        
+        let ws = null;
+        let tiltMode = false;
+        let joystickActive = false;
+        
+        // Connect WebSocket
+        function connect() {
+            try {
+                ws = new WebSocket(wsUrl);
+                
+                ws.onopen = () => {
+                    updateStatus(true);
+                    console.log('Connected to server');
+                };
+                
+                ws.onerror = (error) => {
+                    updateStatus(false);
+                    console.error('WebSocket error:', error);
+                };
+                
+                ws.onclose = () => {
+                    updateStatus(false);
+                    setTimeout(connect, 2000);
+                };
+            } catch (e) {
+                console.error('Connection failed:', e);
+                updateStatus(false);
+            }
+        }
+        
+        function updateStatus(connected) {
+            const status = document.getElementById('status');
+            status.textContent = connected ? 'Connected' : 'Disconnected';
+            status.className = connected ? 'connected' : 'disconnected';
+        }
+        
+        function sendSteering(steering) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                const message = {
+                    source: "phone",
+                    steering: steering
+                };
+                ws.send(JSON.stringify(message));
+                document.getElementById('steeringDisplay').textContent = steering.toFixed(2);
+            }
+        }
+        
+        // Joystick control
+        const joystickArea = document.getElementById('joystickArea');
+        const joystickKnob = document.getElementById('joystickKnob');
+        const maxDistance = 120; // Max distance from center
+        
+        let touchId = null;
+        
+        joystickArea.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            if (e.touches.length > 0) {
+                touchId = e.touches[0].identifier;
+                joystickActive = true;
+                updateJoystick(e.touches[0]);
+            }
+        });
+        
+        joystickArea.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            if (joystickActive && touchId !== null) {
+                const touch = Array.from(e.touches).find(t => t.identifier === touchId);
+                if (touch) {
+                    updateJoystick(touch);
+                }
+            }
+        });
+        
+        joystickArea.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            joystickActive = false;
+            touchId = null;
+            resetJoystick();
+        });
+        
+        function updateJoystick(touch) {
+            const rect = joystickArea.getBoundingClientRect();
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+            
+            const deltaX = touch.clientX - centerX;
+            const deltaY = touch.clientY - centerY;
+            const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+            
+            if (distance > maxDistance) {
+                const angle = Math.atan2(deltaY, deltaX);
+                const limitedX = Math.cos(angle) * maxDistance;
+                const limitedY = Math.sin(angle) * maxDistance;
+                joystickKnob.style.transform = `translate(calc(-50% + ${limitedX}px), calc(-50% + ${limitedY}px))`;
+                const steering = limitedX / maxDistance;
+                sendSteering(steering);
+            } else {
+                joystickKnob.style.transform = `translate(calc(-50% + ${deltaX}px), calc(-50% + ${deltaY}px))`;
+                const steering = deltaX / maxDistance;
+                sendSteering(steering);
+            }
+        }
+        
+        function resetJoystick() {
+            joystickKnob.style.transform = 'translate(-50%, -50%)';
+            sendSteering(0.0);
+        }
+        
+        // Tilt control
+        const tiltButton = document.getElementById('tiltMode');
+        let tiltPermission = false;
+        
+        tiltButton.addEventListener('click', () => {
+            if (!tiltMode) {
+                // Request device orientation permission
+                if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                    DeviceOrientationEvent.requestPermission()
+                        .then(response => {
+                            if (response === 'granted') {
+                                enableTilt();
+                            }
+                        });
+                } else {
+                    enableTilt();
+                }
+            } else {
+                disableTilt();
+            }
+        });
+        
+        function enableTilt() {
+            tiltMode = true;
+            tiltButton.textContent = 'Disable Tilt Control';
+            tiltButton.classList.add('active');
+        }
+        
+        function disableTilt() {
+            tiltMode = false;
+            tiltButton.textContent = 'Enable Tilt Control';
+            tiltButton.classList.remove('active');
+            sendSteering(0.0);
+        }
+        
+        window.addEventListener('deviceorientation', (e) => {
+            if (tiltMode) {
+                // Use gamma (left/right tilt) for steering
+                // Normalize from -45 to 45 degrees to -1 to 1
+                let steering = e.gamma / 45;
+                steering = Math.max(-1, Math.min(1, steering));
+                sendSteering(steering);
+            }
+        });
+        
+        // Initialize
+        connect();
+        
+        // Prevent scrolling
+        document.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+        }, { passive: false });
+    </script>
+</body>
+</html>
